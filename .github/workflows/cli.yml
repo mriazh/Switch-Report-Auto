@@ -1,0 +1,13 @@
+name: CLI
+
+# Thin alias for the CI pipeline: same triggers, same locked-dependency test run,
+# delegated to .github/workflows/ci.yml so there is only one definition to maintain.
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+    branches: [master, main]
+
+jobs:
+  test:
+    uses: ./.github/workflows/ci.yml

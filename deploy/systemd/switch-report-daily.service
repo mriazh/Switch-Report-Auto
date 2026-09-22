@@ -1,0 +1,28 @@
+# Switch-Report-Auto — daily pipeline
+#
+# Runs the switch-report pipeline in daily mode (D-1 data, 01:30 WIB).
+# Invoked by switch-report-daily.timer; run manually with:
+#     systemctl start switch-report-daily.service
+
+[Unit]
+Description=Switch-Report-Auto daily pipeline (AirWave -> 8 Excel workbooks)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=mriazh
+Group=mriazh
+# Working directory is the project checkout.
+WorkingDirectory=/home/mriazh/Github-PC/Switch-Report-Auto
+# Settings also load config/.env through pydantic-settings; this file is
+# read by systemd so the variables are in the process environment too.
+EnvironmentFile=/home/mriazh/Github-PC/Switch-Report-Auto/config/.env
+Environment=PYTHONUNBUFFERED=1
+# --mode is a required scheduler arg; without it the CLI exits 1.
+ExecStart=/home/mriazh/Github-PC/Switch-Report-Auto/.venv/bin/python -m switch_report.scheduler --mode daily
+# A fresh download takes up to ~15 min (3 x 5-minute poll windows).
+TimeoutStartSec=30min
+# Exit cleanly; let systemd timer re-trigger on next schedule.
+RemainAfterExit=no
+Restart=no

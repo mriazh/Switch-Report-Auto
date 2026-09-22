@@ -1,0 +1,24 @@
+# Switch-Report-Auto — monthly timer
+#
+# Fires at 02:00 WIB on the 1st of every month. Timezone=Asia/Jakarta pins
+# the schedule to WIB regardless of the host clock (systemd v252+).
+# Without it, OnCalendar is evaluated in the host local time.
+#
+#   OnCalendar=*-*-01 02:00:00   -> 02:00 WIB on the 1st day of each month
+#
+# Enable with:
+#     systemctl enable --now switch-report-monthly.timer
+
+[Unit]
+Description=Run the switch-report monthly pipeline at 02:00 WIB on the 1st
+
+[Timer]
+OnCalendar=*-*-01 02:00:00
+Timezone=Asia/Jakarta
+# If the host was down at 02:00 on the 1st, catch up on boot.
+OnBootSec=30min
+Persistent=true
+RandomizedDelaySec=0
+
+[Install]
+WantedBy=timers.target

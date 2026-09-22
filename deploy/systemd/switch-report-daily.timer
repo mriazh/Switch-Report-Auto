@@ -1,0 +1,24 @@
+# Switch-Report-Auto — daily timer
+#
+# Fires every day at 01:30 WIB. Timezone=Asia/Jakarta pins the schedule to
+# WIB regardless of the host clock (systemd v252+; Debian 12 ships 252).
+# Without it, OnCalendar is evaluated in the host local time.
+#
+#   OnCalendar=*-*-* 01:30:00   -> 01:30 WIB daily
+#
+# Enable with:
+#     systemctl enable --now switch-report-daily.timer
+
+[Unit]
+Description=Run the switch-report daily pipeline at 01:30 WIB
+
+[Timer]
+OnCalendar=*-*-* 01:30:00
+Timezone=Asia/Jakarta
+# Catch up a missed run (e.g. host was down) without double-firing.
+OnBootSec=15min
+Persistent=true
+RandomizedDelaySec=0
+
+[Install]
+WantedBy=timers.target

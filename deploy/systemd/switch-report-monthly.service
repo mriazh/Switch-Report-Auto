@@ -1,0 +1,25 @@
+# Switch-Report-Auto — monthly pipeline
+#
+# Runs the switch-report pipeline in monthly mode (M-1 data, 07:00 WIB
+# on the 1st of each month). Invoked by switch-report-monthly.timer.
+
+[Unit]
+Description=Switch-Report-Auto monthly pipeline (M-1 rollup across 8 workbooks)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=mriazh
+Group=mriazh
+WorkingDirectory=/home/mriazh/Github-PC/Switch-Report-Auto
+# Settings also load config/.env through pydantic-settings; this file is
+# read by systemd so the variables are in the process environment too.
+EnvironmentFile=/home/mriazh/Github-PC/Switch-Report-Auto/config/.env
+Environment=PYTHONUNBUFFERED=1
+# --mode is a required scheduler arg; without it the CLI exits 1.
+ExecStart=/home/mriazh/Github-PC/Switch-Report-Auto/.venv/bin/python -m switch_report.scheduler --mode monthly
+TimeoutStartSec=30min
+# Exit cleanly; let systemd timer re-trigger on next schedule.
+RemainAfterExit=no
+Restart=no
