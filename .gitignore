@@ -1,0 +1,34 @@
+# Secrets / credentials — never commit
+.env
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+venv/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Playwright session storage
+.auth/
+
+# Runtime artifacts / generated report trees
+logs/
+Report/
+
+# Planning / handoff docs (local only)
+docs/
+
+# Editors
+.vs/
+.vscode/
+*.swp
+.idea/
+
+# Build artifacts
+*.egg-info/
+build/
+dist/
