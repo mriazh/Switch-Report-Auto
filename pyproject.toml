@@ -1,0 +1,38 @@
+[project]
+name = "switch-report-auto"
+version = "0.1.0"
+description = "Hands-free AirWave switch-report automation: fetch daily/monthly CSV exports and populate 8 Excel workbooks headless on Debian."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "playwright>=1.40",
+    "openpyxl>=3.1",
+    "python-dotenv>=1.0",
+    "pydantic>=2.5",
+    "pydantic-settings>=2.1",
+    "requests>=2.31",
+    "pytz>=2024.1",
+    # zoneinfo needs the IANA db; Windows has no system copy (empty TZPATH).
+    # Unconditional so the lock resolves identically on Debian and Windows.
+    "tzdata>=2024.1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-mock>=3.12",
+]
+
+[project.scripts]
+switch-report = "switch_report.scheduler:main"
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
