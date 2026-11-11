@@ -234,6 +234,10 @@ def test_run_notifies_on_success_and_failure(tmp_path, templates, monkeypatch):
 
     # Now force a failure (bad zip) -> failure notification.
     (zip_dir / "08.zip").write_bytes(b"junk")  # not a valid zip
+    # Remove the produced workbook so the run is not treated as already
+    # processed (the skip-check would short-circuit before extraction).
+    (settings.REPORT_BASE_DIR / "2026-10" / "Output" /
+     "Avg Uptime By Any Switch.xlsx").unlink()
     sent.clear()
     bad = s.run(mode="daily", date_override=date(2026, 10, 8), skip_download=True)
     assert bad["success"] is False
@@ -336,3 +340,131 @@ def test_download_zip_target_date_alignment(tmp_path, templates, monkeypatch):
     s.run(mode="monthly", date_override=date(2026, 10, 5), skip_download=False)
     assert fetched_args["mode"] == "monthly"
     assert fetched_args["target_date"].date() == date(2026, 10, 5)
+
+
+def test_scheduler_skips_when_already_processed(tmp_path, templates, monkeypatch):
+    settings = _settings(tmp_path, templates)
+    zip_dir = settings.REPORT_BASE_DIR / "2026-10" / "Raw"
+    zip_dir.mkdir(parents=True, exist_ok=True)
+    _mk_zip(zip_dir / "08.zip")
+
+    out_dir = settings.REPORT_BASE_DIR / "2026-10" / "Output"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    (out_dir / "Avg Uptime By Any Switch.xlsx").write_bytes(b"xlsx")
+
+    steps = []
+
+    def fake_download(self, zip_path):
+        steps.append("download")
+    monkeypatch.setattr(scheduler.Scheduler, "_download_zip", fake_download)
+
+    def fake_extract(zip_path, extract_dir):
+        steps.append("extract")
+    monkeypatch.setattr(scheduler, "extract_archive", fake_extract)
+
+    def fake_excel_run_all(**kw):
+        steps.append("excel")
+        return []
+    monkeypatch.setattr(scheduler, "excel_run_all", fake_excel_run_all)
+
+    import types
+    notified = []
+    monkeypatch.setattr(scheduler, "notifier",
+                        types.SimpleNamespace(
+                            notify_start=lambda *a, **k: notified.append("start"),
+                            notify=lambda *a, **k: notified.append("result"),
+                        ))
+
+    s = scheduler.Scheduler(settings, today=datetime(2026, 10, 9, tzinfo=WIB))
+    summary = s.run(mode="daily", date_override=date(2026, 10, 8),
+                    skip_download=False)
+
+    assert summary["skipped"] is True
+    assert summary["success"] is True
+    assert summary["error"] is None
+    assert summary["files_written"] == []
+    assert steps == []
+    assert notified == []
+
+
+def test_scheduler_force_runs_when_already_processed(tmp_path, templates, monkeypatch):
+    settings = _settings(tmp_path, templates)
+    zip_dir = settings.REPORT_BASE_DIR / "2026-10" / "Raw"
+    zip_dir.mkdir(parents=True, exist_ok=True)
+    _mk_zip(zip_dir / "08.zip")
+
+    out_dir = settings.REPORT_BASE_DIR / "2026-10" / "Output"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    (out_dir / "Avg Uptime By Any Switch.xlsx").write_bytes(b"xlsx")
+
+    steps = []
+
+    def fake_download(self, zip_path):
+        steps.append("download")
+    monkeypatch.setattr(scheduler.Scheduler, "_download_zip", fake_download)
+
+    def fake_extract(zip_path, extract_dir):
+        steps.append("extract")
+    monkeypatch.setattr(scheduler, "extract_archive", fake_extract)
+
+    def fake_excel_run_all(**kw):
+        steps.append("excel")
+        return []
+    monkeypatch.setattr(scheduler, "excel_run_all", fake_excel_run_all)
+
+    import types
+    notified = []
+    monkeypatch.setattr(scheduler, "notifier",
+                        types.SimpleNamespace(
+                            notify_start=lambda *a, **k: notified.append("start"),
+                            notify=lambda *a, **k: notified.append("result"),
+                        ))
+
+    s = scheduler.Scheduler(settings, today=datetime(2026, 10, 9, tzinfo=WIB))
+    summary = s.run(mode="daily", date_override=date(2026, 10, 8),
+                    skip_download=False, force=True)
+
+    assert summary["skipped"] is False
+    assert summary["success"] is True
+    assert "download" in steps
+    assert "extract" in steps
+    assert "excel" in steps
+    # Notifier still runs on a normal (non-skipped) run.
+    assert notified == ["start", "result"]
+
+
+def test_cli_force_flag(tmp_path, templates, monkeypatch):
+    settings = _settings(tmp_path, templates)
+    zip_dir = settings.REPORT_BASE_DIR / "2026-10" / "Raw"
+    zip_dir.mkdir(parents=True, exist_ok=True)
+    _mk_zip(zip_dir / "08.zip")
+
+    # --force is accepted by build_parser.
+    args = scheduler.build_parser().parse_args(["--mode", "daily", "--force"])
+    assert args.force is True
+
+    # --force is passed through to sched.run.
+    captured = {}
+
+    def capture_run(self, *, mode, date_override=None, skip_download=False,
+                    force=False):
+        captured["force"] = force
+        return {"success": True, "mode": mode, "report_day": "2026-10-08",
+                "duration_sec": 0.1, "zip_path": str(zip_dir / "08.zip"),
+                "files_written": [], "error": None, "skipped": False}
+
+    monkeypatch.setattr(scheduler.Scheduler, "run", capture_run)
+    monkeypatch.setattr(scheduler, "Settings", lambda: settings)
+    real_init = scheduler.Scheduler.__init__
+
+    def pinned_init(self, settings):
+        real_init(self, settings, today=datetime(2026, 10, 9, tzinfo=WIB))
+    monkeypatch.setattr(scheduler.Scheduler, "__init__", pinned_init)
+
+    rc = scheduler.main(["--mode", "daily", "--date", "2026-10-08", "--force"])
+    assert rc == 0
+    assert captured["force"] is True
+
+    rc = scheduler.main(["--mode", "daily", "--date", "2026-10-08"])
+    assert rc == 0
+    assert captured["force"] is False

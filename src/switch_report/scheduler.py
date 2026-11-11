@@ -77,6 +77,7 @@ class RunSummary:
     zip_path: Optional[str]
     files_written: list = field(default_factory=list)
     error: Optional[str] = None
+    skipped: bool = False
 
     def as_dict(self) -> dict:
         return {
@@ -87,7 +88,22 @@ class RunSummary:
             "zip_path": self.zip_path,
             "files_written": list(self.files_written),
             "error": self.error,
+            "skipped": self.skipped,
         }
+
+
+def _is_already_processed(output_dir: Path, zip_path: Path, sheet: str) -> bool:
+    """Return True when the report for `sheet` has already been produced.
+
+    Checks that the source zip exists and is non-empty, and that the output
+    directory contains at least one key output workbook (e.g. the Avg Uptime
+    By Any Switch workbook).
+    """
+    if not zip_path.is_file() or zip_path.stat().st_size <= 0:
+        return False
+    if not output_dir.is_dir():
+        return False
+    return (output_dir / "Avg Uptime By Any Switch.xlsx").is_file()
 
 
 # ---------------------------------------------------------------------------
@@ -151,7 +167,7 @@ class Scheduler:
     # Public: run the whole pipeline
     # ------------------------------------------------------------------
     def run(self, *, mode: str, date_override: Optional[date] = None,
-            skip_download: bool = False) -> dict:
+            skip_download: bool = False, force: bool = False) -> dict:
         """Execute the pipeline and return a dict summary (see RunSummary)."""
         t0 = time.monotonic()
         last_err: Optional[str] = None
@@ -184,6 +200,17 @@ class Scheduler:
             report_day_str = date(yy, mm, 1).isoformat()
         zip_path = raw_root / zip_name
         files_written: list[str] = []
+
+        # 0. Skip when already processed (unless --force). Never notify on a
+        #    skip so host reboots / re-runs don't spam WhatsApp.
+        if not force and _is_already_processed(base / "Output", zip_path, sheet):
+            print(f"[scheduler] Data for {report_day_str} already exists. "
+                  f"Skipping (use --force to re-process).")
+            return RunSummary(
+                success=True, mode=mode, report_day=report_day_str,
+                duration_sec=round(time.monotonic() - t0, 3), zip_path=str(zip_path),
+                files_written=[], error=None, skipped=True,
+            ).as_dict()
 
         # 0. Notify START
         notifier.notify_start(
@@ -272,6 +299,8 @@ def build_parser() -> argparse.ArgumentParser:
                    help="Backfill report day (daily) or reference month (monthly) as YYYY-MM-DD.")
     p.add_argument("--skip-download", action="store_true",
                    help="Skip the AirWave download; use the existing raw ZIP.")
+    p.add_argument("--force", action="store_true",
+                   help="Force re-downloading and re-processing even if report data already exists.")
     return p
 
 
@@ -293,7 +322,10 @@ def main(argv: Optional[list[str]] = None) -> int:
 
     sched = Scheduler(settings)
     summary = sched.run(mode=args.mode, date_override=args.date,
-                        skip_download=args.skip_download)
+                        skip_download=args.skip_download, force=args.force)
+    if summary.get("skipped"):
+        print(f"[scheduler] SKIPPED: {summary['report_day']} already processed")
+        return 0
     if not summary["success"]:
         print(f"[scheduler] FAILED: {summary['error']}", file=sys.stderr)
         return 1
